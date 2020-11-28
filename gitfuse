@@ -23,7 +23,7 @@ class Tree(LoggingMixIn, Operations):
 
     def build_tree(self, obj):
         if obj.type_str == 'blob':
-            return obj.id
+            return self.repo[obj.id].read_raw()
         return {o.name: self.build_tree(o) for o in obj}
 
     def readdir(self, path, fh):
@@ -32,10 +32,10 @@ class Tree(LoggingMixIn, Operations):
     def getattr(self, path, fh=None):
         entry = self.lookup(path)
         attrs = {}
-        if isinstance(entry, pygit2.Oid):
+        if isinstance(entry, bytes):
             attrs['st_mode'] = stat.S_IFREG | 0o0444
             attrs['st_nlink'] = 1
-            attrs['st_size'] = len(self.get_data(path))
+            attrs['st_size'] = len(entry)
         else:
             attrs['st_mode'] = stat.S_IFDIR | 0o0555
             attrs['st_nlink'] = len(entry)+2
@@ -50,12 +50,8 @@ class Tree(LoggingMixIn, Operations):
         return attrs
 
     def read(self, path, size, offset, fh):
-        data = self.get_data(path)
+        data = self.lookup(path)
         return data[offset:offset + size]
-
-    def get_data(self, path):
-        oid = self.lookup(path)
-        return self.repo[oid].read_raw()
 
     def lookup(self, path):
         '''Lookup path as string
