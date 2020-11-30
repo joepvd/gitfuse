@@ -1,2 +1,3 @@
 fusepy
 pygit2
+pyyaml
