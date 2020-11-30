@@ -1,12 +1,40 @@
 #!/usr/bin/env python
 
+import concurrent.futures
 from errno import ENOENT
-from os import getegid, geteuid
+from pathlib import Path
+import os
 import stat
 from time import time
+import yaml
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 import pygit2
+
+CONFIG = '''
+mounts:
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-3.11
+  mountpoint: /home/jdelft/ocp-ro/3.11
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-4.2
+  mountpoint: /home/jdelft/ocp-ro/4.2
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-4.3
+  mountpoint: /home/jdelft/ocp-ro/4.3
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-4.4
+  mountpoint: /home/jdelft/ocp-ro/4.4
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-4.5
+  mountpoint: /home/jdelft/ocp-ro/4.5
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-4.6
+  mountpoint: /home/jdelft/ocp-ro/4.6
+- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
+  branch: origin/openshift-4.7
+  mountpoint: /home/jdelft/ocp-ro/4.7
+'''
 
 
 class Tree(LoggingMixIn, Operations):
@@ -18,8 +46,8 @@ class Tree(LoggingMixIn, Operations):
         self.files = self.build_tree(self.tree)
 
         self.now = time()
-        self.uid = geteuid()
-        self.gid = getegid()
+        self.uid = os.geteuid()
+        self.gid = os.getegid()
 
     def build_tree(self, obj):
         if obj.type_str == 'blob':
@@ -70,6 +98,15 @@ class Tree(LoggingMixIn, Operations):
         return files
 
 
+def mount(repo="", branch="", mountpoint=""):
+    Path(mountpoint).mkdir(parents=True, exist_ok=True)
+
+    tree = Tree(repo, branch)
+    FUSE(tree, mountpoint, foreground=True, nothreads=True, debug=True)
+
+
 if __name__ == '__main__':
-    t = Tree('/home/jdelft/src/github.com/openshift/ocp-build-data', 'origin/openshift-3.10')
-    FUSE(t, 'mount', foreground=True, nothreads=True, debug=True)
+    config = yaml.safe_load(CONFIG)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        for cfg in config['mounts']:
+            executor.submit(mount, **cfg)
