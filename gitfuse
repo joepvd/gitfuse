@@ -1,17 +1,22 @@
 #!/usr/bin/env python
 
+import atexit
 import concurrent.futures
 from errno import ENOENT
 from pathlib import Path
 import os
+import subprocess
 import stat
 from time import time
 import yaml
 
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_exit
 import pygit2
 
 CONFIG = '''
+fuse_debug: false
+fuse_nothreads: false
+
 mounts:
 - repo: /home/jdelft/src/github.com/openshift/ocp-build-data
   branch: origin/openshift-3.11
@@ -98,15 +103,25 @@ class Tree(LoggingMixIn, Operations):
         return files
 
 
-def mount(repo="", branch="", mountpoint=""):
+def mount(repo='', branch='', mountpoint='', fuse_debug=False, fuse_nothreads=True):
     Path(mountpoint).mkdir(parents=True, exist_ok=True)
+    # Unmount mountpoint if mounted:
+    subprocess.run(['fusermount', '-u', mountpoint])
 
     tree = Tree(repo, branch)
-    FUSE(tree, mountpoint, foreground=True, nothreads=True, debug=True)
+    FUSE(tree, mountpoint, foreground=True, nothreads=fuse_nothreads, debug=fuse_debug)
 
+def cleanup(mountpoints):
+    for mountpoint in mountpoints:
+        subprocess.run(['fusermount', '-u', mountpoint])
 
 if __name__ == '__main__':
     config = yaml.safe_load(CONFIG)
+
+    atexit.register(cleanup, [m['mountpoint'] for m in config['mounts']])
+
     with concurrent.futures.ThreadPoolExecutor() as executor:
         for cfg in config['mounts']:
+            cfg['fuse_debug'] = config.get('fuse_debug', False)
+            cfg['fuse_nothreads'] = config.get('fuse_nothreads', False)
             executor.submit(mount, **cfg)
