@@ -30,9 +30,6 @@ class Tree(LoggingMixIn, Operations):
             tree = self.repo.revparse_single(branch).tree
             self.files[directory] = self.build_tree(tree)
 
-    def build_subdir(self, tree):
-        return self.build_tree(tree)
-
     def build_tree(self, obj):
         if obj.type_str == 'blob':
             return self.repo[obj.id].read_raw()
@@ -42,8 +39,15 @@ class Tree(LoggingMixIn, Operations):
         return ['.', '..'] + [inode for inode in self.lookup(path)]
 
     def getattr(self, path, fh=None):
+        attrs = {
+            'st_uid': self.uid,
+            'st_gid': self.gid,
+            'st_ctime': self.now,
+            'st_atime': self.now,
+            'st_mtime': self.now,
+        }
+
         inode = self.lookup(path)
-        attrs = {}
         if isinstance(inode, bytes):
             attrs['st_mode'] = stat.S_IFREG | 0o0444
             attrs['st_nlink'] = 1
@@ -52,13 +56,6 @@ class Tree(LoggingMixIn, Operations):
             attrs['st_mode'] = stat.S_IFDIR | 0o0555
             attrs['st_nlink'] = len(inode)+2
             attrs['st_size'] = 4096
-
-        attrs['st_uid'] = self.uid
-        attrs['st_gid'] = self.gid
-        attrs['st_ctime'] = self.now
-        attrs['st_atime'] = self.now
-        attrs['st_mtime'] = self.now
-
         return attrs
 
     def read(self, path, size, offset, fh):
