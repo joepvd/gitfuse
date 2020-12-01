@@ -1,0 +1,8 @@
+[Unit]
+Description=Mount git branches
+
+[Service]
+ExecStart=gitfuse
+
+[Install]
+WantedBy=default.target
