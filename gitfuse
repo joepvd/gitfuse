@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 from errno import ENOENT
 import logging
 import os
@@ -93,8 +94,19 @@ def mount(config):
 
 
 if __name__ == '__main__':
-    configfile = Path().home().joinpath('.config', 'gitfuse', 'config.yaml')
-    with open(configfile) as f:
+    default_config = Path().home().joinpath('.config', 'gitfuse', 'config.yaml').as_posix()
+
+    parser = argparse.ArgumentParser(
+        description='Mount different git branches in directories',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-c', '--config', dest='config',
+        help='Specify config file',
+        type=argparse.FileType('r'),
+        metavar='CONFIGFILE',
+        default=default_config)
+    args = parser.parse_args()
+
+    with open(args.config.name) as f:
         config = yaml.safe_load(f)
 
     config['fuse_nothreads'] = config.get('fuse_nothreads', False)
