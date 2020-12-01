@@ -10,33 +10,11 @@ from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 import pygit2
 import yaml
 
-CONFIG = '''
-fuse_debug: false
-fuse_nothreads: false
-mountpoint: /home/jdelft/ocp-ro
-repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-
-checkouts:
-- branch: origin/openshift-3.11
-  dir: 3.11
-- branch: origin/openshift-4.2
-  dir: 4.2
-- branch: origin/openshift-4.3
-  dir: 4.3
-- branch: origin/openshift-4.4
-  dir: 4.4
-- branch: origin/openshift-4.5
-  dir: 4.5
-- branch: origin/openshift-4.6
-  dir: 4.6
-- branch: origin/openshift-4.7
-  dir: 4.7
-'''
-
 
 class Tree(LoggingMixIn, Operations):
     def __init__(self, config):
-        self.repo = pygit2.Repository(config['repo'])
+        repo_dir = Path(config['repo']).expanduser().as_posix()
+        self.repo = pygit2.Repository(repo_dir)
 
         self.now = time()
         self.uid = os.geteuid()
@@ -106,19 +84,22 @@ class Tree(LoggingMixIn, Operations):
 
 
 def mount(config):
-    mountpoint = config['mountpoint']
+    mountpoint = Path(config['mountpoint']).expanduser()
     debug = config['fuse_debug']
     nothreads = config['fuse_nothreads']
 
-    Path(mountpoint).mkdir(parents=True, exist_ok=True)
+    mountpoint.mkdir(parents=True, exist_ok=True)
 
     tree = Tree(config)
 
-    FUSE(tree, mountpoint, foreground=True, nothreads=nothreads, debug=debug)
+    FUSE(tree, mountpoint.as_posix(), foreground=True, nothreads=nothreads, debug=debug)
 
 
 if __name__ == '__main__':
-    config = yaml.safe_load(CONFIG)
+    configfile = Path().home().joinpath('.config', 'gitfuse', 'config.yaml')
+
+    with open(configfile) as f:
+        config = yaml.safe_load(f)
 
     config['fuse_debug'] = config.get('fuse_debug', False)
     config['fuse_nothreads'] = config.get('fuse_nothreads', False)
