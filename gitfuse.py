@@ -93,7 +93,7 @@ def mount(config):
     FUSE(tree, mountpoint.as_posix(), foreground=True, nothreads=nothreads)
 
 
-if __name__ == '__main__':
+def main():
     default_config = Path().home().joinpath('.config', 'gitfuse', 'config.yaml').as_posix()
 
     parser = argparse.ArgumentParser(
@@ -114,3 +114,6 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.DEBUG)
 
     mount(config)
+
+if __name__ == '__main__':
+    main()

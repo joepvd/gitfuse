@@ -1,2 +1,4 @@
 mount/
 __pycache__
+dist/
+gitfuse.egg-info/
