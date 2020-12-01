@@ -1,58 +1,58 @@
 #!/usr/bin/env python
 
-import atexit
-import concurrent.futures
 from errno import ENOENT
-from pathlib import Path
 import os
-import subprocess
-import stat
+from pathlib import Path
 from time import time
-import yaml
+import stat
 
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_exit
+from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 import pygit2
+import yaml
 
 CONFIG = '''
 fuse_debug: false
 fuse_nothreads: false
+mountpoint: /home/jdelft/ocp-ro
+repo: /home/jdelft/src/github.com/openshift/ocp-build-data
 
-mounts:
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-3.11
-  mountpoint: /home/jdelft/ocp-ro/3.11
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-4.2
-  mountpoint: /home/jdelft/ocp-ro/4.2
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-4.3
-  mountpoint: /home/jdelft/ocp-ro/4.3
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-4.4
-  mountpoint: /home/jdelft/ocp-ro/4.4
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-4.5
-  mountpoint: /home/jdelft/ocp-ro/4.5
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-4.6
-  mountpoint: /home/jdelft/ocp-ro/4.6
-- repo: /home/jdelft/src/github.com/openshift/ocp-build-data
-  branch: origin/openshift-4.7
-  mountpoint: /home/jdelft/ocp-ro/4.7
+checkouts:
+- branch: origin/openshift-3.11
+  dir: 3.11
+- branch: origin/openshift-4.2
+  dir: 4.2
+- branch: origin/openshift-4.3
+  dir: 4.3
+- branch: origin/openshift-4.4
+  dir: 4.4
+- branch: origin/openshift-4.5
+  dir: 4.5
+- branch: origin/openshift-4.6
+  dir: 4.6
+- branch: origin/openshift-4.7
+  dir: 4.7
 '''
 
 
 class Tree(LoggingMixIn, Operations):
-    def __init__(self, path, branch):
-        self.repo = pygit2.Repository(path)
-        self.branch = branch
-
-        self.tree = self.repo.revparse_single(self.branch).tree
-        self.files = self.build_tree(self.tree)
+    def __init__(self, config):
+        self.repo = pygit2.Repository(config['repo'])
 
         self.now = time()
         self.uid = os.geteuid()
         self.gid = os.getegid()
+
+        self.files = {}
+
+        for checkout in config['checkouts']:
+            branch = str(checkout['branch'])
+            directory = str(checkout['dir'])
+
+            tree = self.repo.revparse_single(branch).tree
+            self.files[directory] = self.build_tree(tree)
+
+    def build_subdir(self, tree):
+        return self.build_tree(tree)
 
     def build_tree(self, obj):
         if obj.type_str == 'blob':
@@ -60,18 +60,18 @@ class Tree(LoggingMixIn, Operations):
         return {o.name: self.build_tree(o) for o in obj}
 
     def readdir(self, path, fh):
-        return ['.', '..'] + [e for e in self.lookup(path)]
+        return ['.', '..'] + [inode for inode in self.lookup(path)]
 
     def getattr(self, path, fh=None):
-        entry = self.lookup(path)
+        inode = self.lookup(path)
         attrs = {}
-        if isinstance(entry, bytes):
+        if isinstance(inode, bytes):
             attrs['st_mode'] = stat.S_IFREG | 0o0444
             attrs['st_nlink'] = 1
-            attrs['st_size'] = len(entry)
+            attrs['st_size'] = len(inode)
         else:
             attrs['st_mode'] = stat.S_IFDIR | 0o0555
-            attrs['st_nlink'] = len(entry)+2
+            attrs['st_nlink'] = len(inode)+2
             attrs['st_size'] = 4096
 
         attrs['st_uid'] = self.uid
@@ -88,40 +88,39 @@ class Tree(LoggingMixIn, Operations):
 
     def lookup(self, path):
         '''Lookup path as string
-        Returns entry from self.files
+        Returns inode from self.files: Either file contents or directory entry.
         '''
         files = self.files
-        if path == '/':
-            return self.files
-        for entry in path.strip('/').split('/'):
+
+        inodes = [i for i in path.strip('/').split('/') if i]
+        for inode in inodes:
             try:
-                files = files[entry]
+                files = files[inode]
             except KeyError:
                 raise FuseOSError(ENOENT)
         if isinstance(files, str):
-            return entry
-        return files
+            ret = inode
+        else:
+            ret = files
+        return ret
 
 
-def mount(repo='', branch='', mountpoint='', fuse_debug=False, fuse_nothreads=True):
+def mount(config):
+    mountpoint = config['mountpoint']
+    debug = config['fuse_debug']
+    nothreads = config['fuse_nothreads']
+
     Path(mountpoint).mkdir(parents=True, exist_ok=True)
-    # Unmount mountpoint if mounted:
-    subprocess.run(['fusermount', '-u', mountpoint])
 
-    tree = Tree(repo, branch)
-    FUSE(tree, mountpoint, foreground=True, nothreads=fuse_nothreads, debug=fuse_debug)
+    tree = Tree(config)
 
-def cleanup(mountpoints):
-    for mountpoint in mountpoints:
-        subprocess.run(['fusermount', '-u', mountpoint])
+    FUSE(tree, mountpoint, foreground=True, nothreads=nothreads, debug=debug)
+
 
 if __name__ == '__main__':
     config = yaml.safe_load(CONFIG)
 
-    atexit.register(cleanup, [m['mountpoint'] for m in config['mounts']])
+    config['fuse_debug'] = config.get('fuse_debug', False)
+    config['fuse_nothreads'] = config.get('fuse_nothreads', False)
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        for cfg in config['mounts']:
-            cfg['fuse_debug'] = config.get('fuse_debug', False)
-            cfg['fuse_nothreads'] = config.get('fuse_nothreads', False)
-            executor.submit(mount, **cfg)
+    mount(config)

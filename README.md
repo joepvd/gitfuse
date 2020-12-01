@@ -11,7 +11,5 @@ This little script mounts a readonly FUSE file system locally with some predefin
 branches in different directories. You can only look at the contents of the
 files. There is no concept of commits.
 
-At this moment, only a single branch from a single repository can be mounted.
-
 Configuration is in the code, in the `main()` function. I plan to add a
 configuration parser.
