@@ -6,11 +6,12 @@ import logging
 import os
 from pathlib import Path
 import stat
+from sys import stderr
 from threading import Thread
 from time import time
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
-from inotify_simple import INotify, flags, masks
+from inotify_simple import INotify, flags
 import pygit2
 import yaml
 
@@ -33,11 +34,11 @@ class Tree(LoggingMixIn, Operations):
             directory = str(checkout['dir'])
 
             tree = self.repo.revparse_single(branch).tree
+            logging.info(f'Populating directory {directory} with {branch}')
             self.files[directory] = self.build_tree(tree)
 
             self.watch[branch.split('/')[-1]] = directory
 
-        Thread(target=self.change_watcher).start()
 
     def change_watcher(self):
         # Set up listener for changes
@@ -47,15 +48,15 @@ class Tree(LoggingMixIn, Operations):
         watch_dir = f'{self.repo_dir}/.git/refs/remotes/origin'
 
         inotify.add_watch(watch_dir, watch_flags)
+        logging.info(f'Listening for changes on {watch_dir}')
 
         while True:
             for event in inotify.read():
                 try:
                     directory = self.watch[event.name]
                 except KeyError:
-                    print(f'change_watcher: event {event.name} not in {self.watch}')
                     continue
-                print(f'Regenerating tree for {event.name}')
+                logging.info(f'Re-populating directory {directory} with origin/{event.name}')
                 tree = self.repo.revparse_single(f'origin/{event.name}').tree
                 self.files[directory] = self.build_tree(tree)
 
@@ -118,6 +119,10 @@ def mount(config):
 
     tree = Tree(config)
 
+    if config.get('watch', True):
+        Thread(target=tree.change_watcher).start()
+
+    logging.info(f'Mounting repository on {mountpoint}')
     FUSE(tree, mountpoint.as_posix(), foreground=True, nothreads=nothreads)
 
 
@@ -138,8 +143,11 @@ def main():
         config = yaml.safe_load(f)
 
     config['fuse_nothreads'] = config.get('fuse_nothreads', False)
+
+    level = logging.INFO
     if config.get('debug', False):
-        logging.basicConfig(level=logging.DEBUG)
+        level = logging.DEBUG
+    logging.basicConfig(level=level, stream=stderr)
 
     mount(config)
 
