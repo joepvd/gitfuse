@@ -1,3 +1,4 @@
 fusepy
+inotify_simple
 pygit2
 pyyaml

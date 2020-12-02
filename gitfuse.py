@@ -5,24 +5,28 @@ from errno import ENOENT
 import logging
 import os
 from pathlib import Path
-from time import time
 import stat
+from threading import Thread
+from time import time
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+from inotify_simple import INotify, flags, masks
 import pygit2
 import yaml
 
 
 class Tree(LoggingMixIn, Operations):
     def __init__(self, config):
-        repo_dir = Path(config['repo']).expanduser().as_posix()
-        self.repo = pygit2.Repository(repo_dir)
+        self.config = config
+        self.repo_dir = Path(config['repo']).expanduser().as_posix()
+        self.repo = pygit2.Repository(self.repo_dir)
 
         self.now = time()
         self.uid = os.geteuid()
         self.gid = os.getegid()
 
         self.files = {}
+        self.watch = {}
 
         for checkout in config['checkouts']:
             branch = str(checkout['branch'])
@@ -30,6 +34,30 @@ class Tree(LoggingMixIn, Operations):
 
             tree = self.repo.revparse_single(branch).tree
             self.files[directory] = self.build_tree(tree)
+
+            self.watch[branch.split('/')[-1]] = directory
+
+        Thread(target=self.change_watcher).start()
+
+    def change_watcher(self):
+        # Set up listener for changes
+        inotify = INotify()
+        watch_flags = flags.CREATE | flags.MOVED_TO
+
+        watch_dir = f'{self.repo_dir}/.git/refs/remotes/origin'
+
+        inotify.add_watch(watch_dir, watch_flags)
+
+        while True:
+            for event in inotify.read():
+                try:
+                    directory = self.watch[event.name]
+                except KeyError:
+                    print(f'change_watcher: event {event.name} not in {self.watch}')
+                    continue
+                print(f'Regenerating tree for {event.name}')
+                tree = self.repo.revparse_single(f'origin/{event.name}').tree
+                self.files[directory] = self.build_tree(tree)
 
     def build_tree(self, obj):
         if obj.type_str == 'blob':
@@ -114,6 +142,7 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
 
     mount(config)
+
 
 if __name__ == '__main__':
     main()
