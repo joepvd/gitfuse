@@ -39,7 +39,6 @@ class Tree(LoggingMixIn, Operations):
 
             self.watch[branch.split('/')[-1]] = directory
 
-
     def change_watcher(self):
         # Set up listener for changes
         inotify = INotify()
@@ -52,12 +51,13 @@ class Tree(LoggingMixIn, Operations):
 
         while True:
             for event in inotify.read():
+                branch = f'origin/{event.name}'
                 try:
                     directory = self.watch[event.name]
                 except KeyError:
                     continue
-                logging.info(f'Re-populating directory {directory} with origin/{event.name}')
-                tree = self.repo.revparse_single(f'origin/{event.name}').tree
+                logging.info(f'Re-populating directory {directory} with {branch}') # noqa
+                tree = self.repo.revparse_single(f'{branch}').tree
                 self.files[directory] = self.build_tree(tree)
 
     def build_tree(self, obj):
@@ -127,12 +127,14 @@ def mount(config):
 
 
 def main():
-    default_config = Path().home().joinpath('.config', 'gitfuse', 'config.yaml').as_posix()
+    default_config = Path().home().joinpath(
+        '.config', 'gitfuse', 'config.yaml').as_posix()
 
     parser = argparse.ArgumentParser(
         description='Mount different git branches in directories',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--config', dest='config',
+    parser.add_argument(
+        '-c', '--config', dest='config',
         help='Specify config file',
         type=argparse.FileType('r'),
         metavar='CONFIGFILE',
