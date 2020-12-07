@@ -6,7 +6,7 @@ import logging
 import os
 from pathlib import Path
 import stat
-from sys import stderr
+from sys import exit, stderr
 from threading import Thread
 from time import time
 
@@ -27,43 +27,54 @@ class Tree(LoggingMixIn, Operations):
         self.gid = os.getegid()
 
         self.files = {}
-        self.watch = {}
+
+        self.watch_cfg = {}
+        self.watchers = {}
 
         for checkout in config['checkouts']:
             branch = str(checkout['branch'])
             directory = str(checkout['dir'])
 
+            ref = self.repo.lookup_branch(branch, pygit2.GIT_BRANCH_ALL).name
+            self.watch_cfg[f'{self.repo_dir}/.git/{ref}'] = checkout
+
             tree = self.repo.revparse_single(branch).tree
             logging.info(f'Populating directory {directory} with {branch}')
             self.files[directory] = self.build_tree(tree)
 
-            self.watch[branch.split('/')[-1]] = directory
-
     def change_watcher(self):
         # Set up listener for changes
-        inotify = INotify()
+        self.inotify = INotify()
         watch_flags = flags.CREATE | flags.MOVED_TO
 
-        watch_dir = f'{self.repo_dir}/.git/refs/remotes/origin'
-
-        inotify.add_watch(watch_dir, watch_flags)
-        logging.info(f'Listening for changes on {watch_dir}')
+        for watch in self.watch_cfg:
+            iwatch = self.inotify.add_watch(watch, watch_flags)
+            self.watchers[iwatch] = self.watch_cfg[watch]
 
         while True:
-            for event in inotify.read():
-                branch = f'origin/{event.name}'
-                try:
-                    directory = self.watch[event.name]
-                except KeyError:
-                    continue
+            for event in self.inotify.read():
+                branch = self.watchers[event.wd]['branch']
+                directory = str(self.watchers[event.wd]['dir'])
+
                 logging.info(f'Re-populating directory {directory} with {branch}') # noqa
-                tree = self.repo.revparse_single(f'{branch}').tree
+
+                tree = self.repo.revparse_single(branch).tree
                 self.files[directory] = self.build_tree(tree)
+
+    def rm_watchers(self):
+        for wd in self.watchers.keys():
+            self.inotify.rm_watch(wd)
 
     def build_tree(self, obj):
         if obj.type_str == 'blob':
             return self.repo[obj.id].read_raw()
         return {o.name: self.build_tree(o) for o in obj}
+
+    def build_path(self, path):
+        for entry in path:
+            if type(path[entry]) == bytes:
+                return entry
+            return self.build_path(path[entry])
 
     def readdir(self, path, fh):
         return ['.', '..'] + [inode for inode in self.lookup(path)]
@@ -120,13 +131,23 @@ def mount(config):
     tree = Tree(config)
 
     if config.get('watch', True):
-        Thread(target=tree.change_watcher).start()
+        thread = Thread(target=tree.change_watcher).start()
+    else:
+        thread = None
+        logging.info('Not watching for changes in the repository.')
 
     logging.info(f'Mounting repository on {mountpoint}')
-    FUSE(tree, mountpoint.as_posix(), foreground=True, nothreads=nothreads)
+    try:
+        FUSE(tree, mountpoint.as_posix(), foreground=True, nothreads=nothreads)
+    except (KeyboardInterrupt, SystemExit):
+        logging.info('Shutting down')
+        if thread:
+            tree.rm_watchers()
+            thread.stop()
+        exit()
 
 
-def main():
+def get_config():
     default_config = Path().home().joinpath(
         '.config', 'gitfuse', 'config.yaml').as_posix()
 
@@ -146,11 +167,18 @@ def main():
 
     config['fuse_nothreads'] = config.get('fuse_nothreads', False)
 
-    level = logging.INFO
+    config['level'] = logging.INFO
     if config.get('debug', False):
-        level = logging.DEBUG
-    logging.basicConfig(level=level, stream=stderr)
+        config['level'] = logging.DEBUG
+    return config
 
+
+def main():
+    config = get_config()
+    logging.basicConfig(
+        level=config['level'],
+        stream=stderr,
+        format='%(levelname)s:%(message)s')
     mount(config)
 
 
