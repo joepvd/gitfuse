@@ -4,15 +4,13 @@ repo: ~/src/github.com/openshift/ocp-build-data
 checkouts:
 - branch: origin/openshift-3.11
   dir: 3.11
-- branch: origin/openshift-4.2
-  dir: 4.2
-- branch: origin/openshift-4.3
-  dir: 4.3
-- branch: origin/openshift-4.4
-  dir: 4.4
-- branch: origin/openshift-4.5
-  dir: 4.5
 - branch: origin/openshift-4.6
   dir: 4.6
 - branch: origin/openshift-4.7
   dir: 4.7
+- branch: origin/openshift-4.8
+  dir: 4.8
+- branch: origin/openshift-4.9
+  dir: 4.9
+- branch: origin/openshift-4.10
+  dir: 4.10

@@ -48,8 +48,11 @@ class Tree(LoggingMixIn, Operations):
         watch_flags = flags.CREATE | flags.MOVED_TO
 
         for watch in self.watch_cfg:
-            iwatch = self.inotify.add_watch(watch, watch_flags)
-            self.watchers[iwatch] = self.watch_cfg[watch]
+            try:
+                iwatch = self.inotify.add_watch(watch, watch_flags)
+                self.watchers[iwatch] = self.watch_cfg[watch]
+            except FileNotFoundError:
+                logging.warn(f"Could not set up watcher for {watch}")
 
         while True:
             for event in self.inotify.read():
@@ -164,6 +167,7 @@ def get_config():
 
     with open(args.config.name) as f:
         config = yaml.safe_load(f)
+    config['configfile'] = args.config.name
 
     config['fuse_nothreads'] = config.get('fuse_nothreads', False)
 
@@ -179,6 +183,7 @@ def main():
         level=config['level'],
         stream=stderr,
         format='%(levelname)s:%(message)s')
+    logging.info(f'Working with config {config}')
     mount(config)
 
 
