@@ -11,6 +11,12 @@ This daemon mounts a readonly FUSE file system locally with predefined
 branches in different directories. You can only look at the contents of the
 files. There is no concept of editing and history.
 
+It is preferred to have gitfus look at the upstream origin branches. Then you
+have an objective view on the current state of the authorative branch.
+
+Gitfuse installs inotify watchers on the configured branches. Whenever you do
+`git fetch origin` or `git pull` and HEAD changes, the directory is regenerated.
+
 `gitfuse` expects a configfile in `~/.config/gitfuse/config.yaml`. An
 alternative location can be specified with `-c path/to/file`.
 
@@ -29,7 +35,3 @@ There is a systemd service file included that can be copied into
 $ systemctl start --user gitfuse.service
 $ systemctl enable --user gitfuse.service
 ```
-
-## TODOs
-This script does not notice of the base branch has been updated, and will serve
-stale information after a fetch.
