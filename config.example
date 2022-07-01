@@ -3,17 +3,21 @@ repo: ~/src/github.com/openshift/ocp-build-data
 
 checkouts:
 - branch: origin/openshift-3.11
-  dir: 3.11
+  dir: "3.11"
 - branch: origin/openshift-4.6
-  dir: 4.6
+  dir: "4.6"
 - branch: origin/openshift-4.7
-  dir: 4.7
+  dir: "4.7"
 - branch: origin/openshift-4.8
-  dir: 4.8
+  dir: "4.8"
 - branch: origin/openshift-4.9
-  dir: 4.9
+  dir: "4.9"
 - branch: origin/openshift-4.10
   # Make sure to enclose this in "" or ''
   # otherwise pyyaml will interpret it
   # as a float and truncate trailing 0
   dir: "4.10"
+- branch: origin/openshift-4.11
+  dir: "4.11"
+- branch: origin/openshift-4.12
+  dir: "4.12"
